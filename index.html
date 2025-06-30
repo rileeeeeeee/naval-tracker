@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Presence | A Public View of Naval Operations</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js' crossorigin="anonymous"></script>
+    <link href='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css' rel='stylesheet' />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --color-bg-dark: #111827;
+            --color-bg-medium: #1F2937;
+            --color-bg-light: #374151;
+            --color-border: #4B5563;
+            --color-text-primary: #F3F4F6;
+            --color-text-secondary: #9CA3AF;
+            --color-accent: #38BDF8;
+            --color-accent-hover: #7DD3FC;
+        }
+        body {
+            background-color: var(--color-bg-dark);
+            color: var(--color-text-primary);
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+        .font-sans { font-family: 'Inter', sans-serif; }
+        .font-mono { font-family: 'Roboto Mono', monospace; }
+        .digital-readout {
+            background-color: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--color-border);
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
+        }
+        .mapboxgl-popup-content {
+            background-color: rgba(31, 41, 55, 0.85);
+            color: var(--color-text-primary);
+            font-family: 'Inter', sans-serif;
+            border-radius: 8px;
+            border: 1px solid var(--color-border);
+            padding: 1rem;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            min-width: 240px;
+        }
+        .mapboxgl-popup-close-button {
+            color: var(--color-text-primary);
+            font-size: 1.5rem;
+            padding: 0 0.5rem;
+        }
+        .mapboxgl-popup-anchor-top .mapboxgl-popup-tip,
+        .mapboxgl-popup-anchor-bottom .mapboxgl-popup-tip,
+        .mapboxgl-popup-anchor-left .mapboxgl-popup-tip,
+        .mapboxgl-popup-anchor-right .mapboxgl-popup-tip {
+            border: none;
+        }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--color-bg-dark); }
+        ::-webkit-scrollbar-thumb { background: var(--color-bg-light); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--color-border); }
+        .page {
+            display: none;
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        .page.active { display: block; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(17, 24, 39, 0.8);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        .modal-overlay.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        .modal-content {
+            background-color: var(--color-bg-medium);
+            border: 1px solid var(--color-border);
+            border-radius: 0.75rem;
+            width: 90%;
+            max-width: 900px;
+            max-height: 90vh;
+            overflow-y: auto;
+            transform: scale(0.95);
+            transition: transform 0.3s ease;
+        }
+        .modal-overlay.visible .modal-content {
+            transform: scale(1);
+        }
+        .ship-marker {
+            cursor: pointer;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        @keyframes sonarPing {
+            0% { transform: scale(0.1); opacity: 1; }
+            70% { transform: scale(1); opacity: 0; }
+            100% { opacity: 0; }
+        }
+
+        .ship-icon {
+            width: 16px;
+            height: 16px;
+            background-color: var(--color-accent);
+            border-radius: 50%;
+            border: 2px solid var(--color-bg-dark);
+            box-shadow: 0 0 8px rgba(56, 189, 248, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s ease;
+            position: relative;
+        }
+        
+        .ship-icon::before {
+            content: '';
+            position: absolute;
+            width: 200%;
+            height: 200%;
+            border-radius: 50%;
+            background-color: var(--color-accent);
+            animation: sonarPing 2.5s ease-out infinite;
+            z-index: -1;
+        }
+
+        .ship-icon::after {
+            content: '';
+            width: 4px;
+            height: 4px;
+            background-color: var(--color-bg-dark);
+            border-radius: 50%;
+        }
+
+        .ship-marker:hover .ship-icon { transform: scale(1.4); }
+        .intel-group-header {
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            user-select: none;
+            padding: 1rem;
+            transition: background-color 0.2s;
+        }
+        .intel-group-header:hover { background-color: #1f293780; }
+        .intel-group-header .arrow { transition: transform 0.2s ease-in-out; }
+        .intel-group-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out, padding 0.3s ease-out;
+            padding: 0 1.5rem;
+        }
+        .intel-group-header.open + .intel-group-content {
+            max-height: 1000px;
+            padding: 1.5rem;
+            border-top: 1px solid var(--color-border);
+        }
+        .intel-group-header.open .arrow { transform: rotate(-180deg); }
+        .intel-filter-link { cursor: pointer; text-decoration: none; }
+        .intel-filter-link:hover { color: var(--color-accent-hover); }
+        .db-card { transition: transform 0.2s ease-out, box-shadow 0.2s ease-out; }
+        .db-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3), 0 0 15px var(--color-accent-hover);
+        }
+        .intel-bar { width: 0%; transition: width 1s ease-in-out; }
+        .recent-activity-card {
+            transition: transform 0.2s ease-out, border-color 0.2s ease-out;
+            cursor: pointer;
+        }
+        .recent-activity-card:hover {
+            transform: translateY(-4px);
+            border-color: var(--color-accent);
+        }
+        
+        /* New HUD Styles */
+        #hud-container {
+            height: 80vh;
+            position: relative;
+            background-color: #0b1120;
+            background-image: radial-gradient(rgba(56, 189, 248, 0.1) 1px, transparent 1px);
+            background-size: 15px 15px;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-bottom: 1px solid var(--color-border);
+        }
+        #hud-container::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: radial-gradient(circle, transparent 50%, #0b1120 85%);
+            pointer-events: none;
+        }
+        #hud-map-image {
+            width: 80%;
+            max-width: 1100px;
+            opacity: 0.7;
+            filter: brightness(0) saturate(100%) invert(69%) sepia(26%) saturate(5412%) hue-rotate(175deg) brightness(101%) contrast(95%);
+        }
+        .hud-element {
+            position: absolute;
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            color: rgba(56, 189, 248, 0.7);
+            font-family: 'Roboto Mono', monospace;
+            font-size: 10px;
+            -webkit-font-smoothing: antialiased;
+        }
+        .hud-corner-bracket {
+            width: 40px;
+            height: 40px;
+        }
+        .hud-corner-bracket.top-left { top: 20px; left: 20px; border-right: none; border-bottom: none; }
+        .hud-corner-bracket.top-right { top: 20px; right: 20px; border-left: none; border-bottom: none; }
+        .hud-corner-bracket.bottom-left { bottom: 20px; left: 20px; border-right: none; border-top: none; }
+        .hud-corner-bracket.bottom-right { bottom: 20px; right: 20px; border-left: none; border-top: none; }
+        
+        #hud-stats-panel {
+            top: 40px;
+            left: 40px;
+            width: 220px;
+            padding: 10px;
+            background: rgba(17, 24, 39, 0.5);
+            backdrop-filter: blur(2px);
+        }
+        #hud-stats-panel h4 {
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid rgba(56, 189, 248, 0.3);
+            padding-bottom: 5px;
+        }
+        .hud-stat {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+        .hud-stat-label {
+            color: rgba(209, 213, 219, 0.7);
+        }
+        .hud-stat-value {
+            color: var(--color-accent);
+            font-weight: 700;
+        }
+
+        .nav-link-active {
+            color: var(--color-accent) !important;
+            font-weight: 700;
+        }
+
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <header class="bg-gray-900/70 backdrop-blur-md sticky top-0 z-50 border-b border-gray-800"><nav class="container mx-auto px-4 sm:px-6 lg:px-8"><div class="flex items-center justify-between h-16"><div class="flex items-center"><a href="#" class="font-bold text-xl text-white nav-link" data-page="home"><span class="text-sky-400">Global</span> Presence</a></div><div class="hidden md:block"><div id="desktop-nav" class="ml-10 flex items-baseline space-x-4"><a href="#" class="nav-link px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white" data-page="home">Home</a><a href="#" class="nav-link px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white" data-page="map">Fleet Tracker</a><a href="#" class="nav-link px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white" data-page="database">Naval Database</a><a href="#" class="nav-link px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white" data-page="briefing">Intel Brief</a><a href="#" class="nav-link px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white" data-page="about">About</a></div></div><div class="md:hidden"><button id="mobile-menu-button" class="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-white"><span class="sr-only">Open main menu</span><svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg></button></div></div></nav><div id="mobile-menu" class="md:hidden hidden"><div class="px-2 pt-2 pb-3 space-y-1 sm:px-3"><a href="#" class="nav-link block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:bg-gray-700 hover:text-white" data-page="home">Home</a><a href="#" class="nav-link block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:bg-gray-700 hover:text-white" data-page="map">Fleet Tracker</a><a href="#" class="nav-link block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:bg-gray-700 hover:text-white" data-page="database">Naval Database</a><a href="#" class="nav-link block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:bg-gray-700 hover:text-white" data-page="briefing">Intel Brief</a><a href="#" class="nav-link block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:bg-gray-700 hover:text-white" data-page="about">About</a></div></div></header><main class="flex-grow"><div id="home-page" class="page active">
+        <div id="hud-container">
+            <img id="hud-map-image" src="https://upload.wikimedia.org/wikipedia/commons/8/80/World_map_-_low_resolution.svg" alt="World Map HUD">
+            <div class="hud-element hud-corner-bracket top-left"></div>
+            <div class="hud-element hud-corner-bracket top-right"></div>
+            <div class="hud-element hud-corner-bracket bottom-left"></div>
+            <div class="hud-element hud-corner-bracket bottom-right"></div>
+            
+            <div id="hud-stats-panel" class="hud-element">
+                <h4>U.S. NAVY - STATUS</h4>
+                <div class="hud-stat">
+                    <span class="hud-stat-label">ACTIVE PERSONNEL</span>
+                    <span class="hud-stat-value">341,759</span>
+                </div>
+                <div class="hud-stat">
+                    <span class="hud-stat-label">TOTAL VESSELS</span>
+                    <span class="hud-stat-value">291</span>
+                </div>
+                <div class="hud-stat">
+                    <span class="hud-stat-label">GLOBAL DEPLOYMENT</span>
+                    <span class="hud-stat-value">38%</span>
+                </div>
+                <div class="hud-stat">
+                    <span class="hud-stat-label">THREATCON</span>
+                    <span class="hud-stat-value text-green-400">CHARLIE</span>
+                </div>
+            </div>
+            
+            <div class="absolute z-10 px-4 text-center text-white">
+                <h1 class="text-4xl md:text-6xl lg:text-7xl font-bold font-mono tracking-tight text-white" style="text-shadow: 0 0 15px rgba(56, 189, 248, 0.5);">Global Presence</h1>
+                <p class="mt-4 text-lg md:text-2xl text-gray-300">A Public View of Naval Operations</p>
+                <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4 font-mono">
+                    <div class="digital-readout">
+                        <span id="carrier-group-count" class="animated-counter text-2xl md:text-3xl font-bold text-sky-400" data-target="0">0</span>
+                        <span class="block text-sm text-gray-400">Carrier Groups Deployed</span>
+                    </div>
+                    <div class="digital-readout">
+                        <span id="ship-count" class="animated-counter text-2xl md:text-3xl font-bold text-sky-400" data-target="0">0</span>
+                        <span class="block text-sm text-gray-400">Total Assets Tracked</span>
+                    </div>
+                    <div class="digital-readout">
+                        <span id="last-updated" class="text-2xl md:text-3xl font-bold text-sky-400">--</span>
+                        <span class="block text-sm text-gray-400">Last Update</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+            
+            <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-12 -mt-24 relative z-10">
+                <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    <div class="lg:col-span-2 bg-gray-800/80 backdrop-blur-sm p-6 rounded-lg border border-gray-700 hover:border-sky-400 transition-all duration-300"><h3 class="text-xl font-bold mb-4">Live Fleet Tracker</h3><div id="home-map-preview" class="h-64 w-full rounded-md bg-gray-700"></div><p class="text-gray-400 mt-4">View the general operating areas of deployed naval groups worldwide based on public reports.</p><button class="mt-4 bg-sky-500 hover:bg-sky-600 text-white font-bold py-2 px-4 rounded transition-colors nav-link" data-page="map">Launch Full Tracker</button></div>
+                    <div class="bg-gray-800/80 backdrop-blur-sm p-6 rounded-lg border border-gray-700"><h3 class="text-xl font-bold mb-4">Featured Profile</h3><img src="" id="featured-ship-image" onerror="this.onerror=null;this.src='https://placehold.co/600x400/1F2937/FFFFFF?text=Ship+Image';" alt="USS Gerald R. Ford" class="rounded-md mb-4 h-40 w-full object-cover"><h4 class="text-lg font-semibold">USS Gerald R. Ford (CVN-78)</h4><p class="text-gray-400 mt-2 text-sm">The lead ship of her class of United States Navy supercarriers. Ford is the most advanced aircraft carrier in the world.</p><button class="mt-4 w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded transition-colors nav-link" data-page="database">Explore Database</button></div>
+                </div>
+                
+                <div id="recent-activity-section" class="mt-16">
+                    <div class="text-center mb-8">
+                         <h2 class="text-3xl font-bold">Recent Activity</h2>
+                         <p class="text-gray-400 mt-2">The latest updates from around the globe.</p>
+                    </div>
+                    <div id="recent-activity-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    </div>
+                </div>
+
+            </div></div><div id="map-page" class="page h-full w-full fixed top-0 left-0 pt-16"><div id="map" class="h-full w-full"></div><div id="map-controls" class="absolute top-20 left-4 bg-gray-900/70 backdrop-blur-md p-4 rounded-lg border border-gray-700 max-w-xs w-full transition-opacity duration-300"><h3 class="font-mono text-lg font-bold border-b border-gray-600 pb-2 mb-3">FILTER ASSETS</h3><div class="mb-4"><input id="search-bar" type="text" placeholder="Search by name or hull..." class="w-full bg-gray-700 border border-gray-600 rounded-md py-2 px-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-sky-400"></div><div><h4 class="font-semibold mb-2">Ship Class</h4><div id="filter-controls" class="space-y-2 text-sm"></div></div><div class="mt-4 pt-4 border-t border-gray-600 text-center"><button id="reset-filters" class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded transition-colors">Reset View</button></div></div><div id="map-style-controls" class="absolute top-20 right-4 flex flex-col gap-2"><button class="map-view-btn bg-gray-900/70 backdrop-blur-md p-2 rounded-lg border border-gray-700 text-white" data-projection="globe">Globe View</button><button class="map-view-btn bg-gray-900/70 backdrop-blur-md p-2 rounded-lg border border-gray-700 text-white" data-projection="mercator">2D View</button><hr class="border-gray-600"><button class="map-style-btn bg-gray-900/70 backdrop-blur-md p-2 rounded-lg border border-gray-700 text-white" data-style="satellite-streets-v12">Satellite</button><button class="map-style-btn bg-gray-900/70 backdrop-blur-md p-2 rounded-lg border border-gray-700 text-white" data-style="dark-v11">Dark</button></div></div>
+            
+            <div id="database-page" class="page container mx-auto px-4 sm:px-6 lg:px-8 py-12">
+                <div class="text-center mb-8">
+                    <h2 class="text-3xl font-bold font-mono">Naval Database</h2>
+                    <p class="text-gray-400 mt-2">Search and explore detailed profiles of naval assets.</p>
+                </div>
+                <div class="max-w-4xl mx-auto mb-8 p-4 bg-gray-900/50 rounded-lg border border-gray-700">
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div class="md:col-span-2">
+                            <label for="database-search-bar" class="text-sm font-bold text-gray-400">Search by Name or Hull</label>
+                            <input id="database-search-bar" type="text" placeholder="e.g., Ford or CVN-78..." class="mt-1 w-full bg-gray-700 border border-gray-600 rounded-md py-2 px-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-sky-400">
+                        </div>
+                        <div>
+                            <label for="database-class-filter" class="text-sm font-bold text-gray-400">Filter by Class</label>
+                            <select id="database-class-filter" class="mt-1 w-full bg-gray-700 border border-gray-600 rounded-md py-2 px-3 text-white focus:outline-none focus:ring-2 focus:ring-sky-400">
+                            </select>
+                        </div>
+                        <div>
+                            <label for="database-sort-filter" class="text-sm font-bold text-gray-400">Sort By</label>
+                            <select id="database-sort-filter" class="mt-1 w-full bg-gray-700 border border-gray-600 rounded-md py-2 px-3 text-white focus:outline-none focus:ring-2 focus:ring-sky-400">
+                                <option value="name_asc">Name (A-Z)</option>
+                                <option value="name_desc">Name (Z-A)</option>
+                                <option value="date_desc">Commission Date (Newest)</option>
+                                <option value="date_asc">Commission Date (Oldest)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div id="database-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                </div>
+            </div>
+            
+            <div id="briefing-page" class="page container mx-auto px-4 sm:px-6 lg:px-8 py-12">
+                <div class="text-center mb-12">
+                    <h2 class="text-3xl font-bold font-mono">Global Fleet Readiness Dashboard</h2>
+                    <p class="text-gray-400 mt-2">Live intelligence summary based on tracked assets.</p>
+                </div>
+                <div class="max-w-7xl mx-auto">
+                    <div id="intel-summary" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12"></div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div id="intel-class-container" class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                            <h3 class="text-xl font-bold font-mono text-sky-400 border-b border-gray-600 pb-3 mb-4">Asset Breakdown by Class</h3>
+                            <div id="intel-class-breakdown" class="space-y-4"></div>
+                        </div>
+                        <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                            <h3 class="text-xl font-bold font-mono text-sky-400 border-b border-gray-600 pb-3 mb-4">Deployments by Region</h3>
+                            <div id="intel-region-breakdown" class="space-y-3"></div>
+                        </div>
+                    </div>
+                    <div id="intel-deployed-groups" class="mt-8 space-y-4"></div>
+                </div>
+            </div>
+
+            <div id="about-page" class="page container mx-auto px-4 sm:px-6 lg:px-8 py-12"><div class="max-w-3xl mx-auto bg-gray-800 p-8 rounded-lg border border-gray-700"><h2 class="text-3xl font-bold font-mono text-center mb-6">Our Mission</h2><p class="text-gray-300 mb-4">This website is an independent, unofficial resource for enthusiasts, veterans, researchers, and the public to explore the global presence of naval forces. Our goal is to provide a clear, accessible, and informative view of naval operations based entirely on open-source, publicly available information.</p><p class="text-gray-300 mb-6">We believe that understanding the scale and scope of these deployments is crucial for a well-informed public discussion on defense and international affairs. We do not editorialize on this data, but rather present it in a digestible format for educational purposes.</p><div class="bg-yellow-900/20 border-l-4 border-yellow-500 text-yellow-300 p-4 rounded-r-lg" role="alert"><h3 class="font-bold">IMPORTANT DISCLAIMER</h3><p class="text-sm">This website is an independent, unofficial resource for educational and informational purposes only. All data is aggregated from public sources such as official press releases and reputable news outlets. Ship locations are **APPROXIMATE** general operating areas and **DO NOT** represent real-time, classified, or operational intelligence. This tool should not be used for navigational or operational planning.</p></div><div class="mt-8 text-center text-gray-500 text-sm"><p>Data primarily sourced from the excellent reporting at <a href="https://news.usni.org/category/fleet-tracker" target="_blank" class="text-sky-400 hover:underline">USNI News Fleet Tracker</a>.</p><p>Website designed and developed for informational purposes.</p></div></div></div></main>
+    
+    <div id="ship-details-modal" class="modal-overlay">
+        <div class="modal-content p-0">
+            <div class="p-6">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h2 id="modal-ship-name" class="text-2xl lg:text-3xl font-bold font-mono text-sky-400 mb-2"></h2>
+                        <p id="modal-ship-hull-class" class="text-gray-400 text-md"></p>
+                    </div>
+                    <button id="modal-close-button" class="text-4xl text-gray-400 hover:text-white leading-none">&times;</button>
+                </div>
+            </div>
+            <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="md:col-span-1">
+                    <img id="modal-ship-image" src="" alt="Ship image" class="rounded-lg w-full h-auto object-cover mb-4">
+                     <p id="modal-ship-description" class="text-gray-300 text-sm leading-relaxed"></p>
+                </div>
+                 <div class="md:col-span-1 bg-gray-900/50 p-4 rounded-lg">
+                    <h3 class="font-bold text-lg text-sky-400 mb-4 border-b border-gray-700 pb-2 flex justify-between items-center">
+                        <span>Ship Details & Statistics</span>
+                        <span id="modal-flag-container" class="w-8 h-6"></span>
+                    </h3>
+                    <div id="modal-stats-grid" class="grid grid-cols-2 gap-4 text-sm"></div>
+                    
+                    <h3 class="font-bold text-lg text-sky-400 mt-6 mb-4 border-b border-gray-700 pb-2">Key Armament</h3>
+                    <ul id="modal-armament-list" class="list-disc list-inside text-gray-300 text-sm space-y-1"></ul>
+                 </div>
+            </div>
+             <div class="px-6 pb-6">
+                <h3 class="font-bold text-lg text-sky-400 mt-4 mb-2 border-b border-gray-700 pb-2">Service History</h3>
+                <p id="modal-ship-history" class="text-gray-400 text-sm italic"></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // This single script block contains all the application logic.
+    mapboxgl.accessToken = 'pk.eyJ1IjoicmlsZXl3MDciLCJhIjoiY21jaHg3bHpzMTBuczJqcHMxMXR3aTR0aCJ9.dFQ_vsD1x1ea6T_YFAqeAg';
+    
+    let map;
+    let homeMap;
+    let fullFleetData = { ships: [] }; 
+    let lastDataFetchTime = null;
+    let activeIntelFilters = { region: null, group: null };
+
+
+    const pages = document.querySelectorAll('.page');
+    const navLinks = document.querySelectorAll('.nav-link');
+    const mobileMenuButton = document.getElementById('mobile-menu-button');
+    const mobileMenu = document.getElementById('mobile-menu');
+    const modal = document.getElementById('ship-details-modal');
+    const modalCloseButton = document.getElementById('modal-close-button');
+    const modalShipName = document.getElementById('modal-ship-name');
+    const modalShipHullClass = document.getElementById('modal-ship-hull-class');
+    const modalShipImage = document.getElementById('modal-ship-image');
+    const modalShipDescription = document.getElementById('modal-ship-description');
+    const modalStatsGrid = document.getElementById('modal-stats-grid');
+    const modalArmamentList = document.getElementById('modal-armament-list');
+    const modalShipHistory = document.getElementById('modal-ship-history');
+    const modalFlagContainer = document.getElementById('modal-flag-container');
+    const featuredShipImage = document.getElementById('featured-ship-image');
+    const databaseSearchBar = document.getElementById('database-search-bar');
+    const databaseClassFilter = document.getElementById('database-class-filter');
+    const databaseSortFilter = document.getElementById('database-sort-filter');
+
+    // --- RENDER & DISPLAY LOGIC ---
+
+    function showPage(pageId) {
+        pages.forEach(page => page.classList.remove('active'));
+        document.querySelectorAll('#desktop-nav .nav-link, #mobile-menu .nav-link').forEach(link => link.classList.remove('nav-link-active'));
+        
+        const newPage = document.getElementById(`${pageId}-page`);
+        if (newPage) newPage.classList.add('active');
+        
+        document.querySelectorAll(`#desktop-nav .nav-link[data-page="${pageId}"], #mobile-menu .nav-link[data-page="${pageId}"]`).forEach(link => link.classList.add('nav-link-active'));
+
+        mobileMenu.classList.add('hidden');
+        window.scrollTo(0, 0);
+        
+        setTimeout(() => {
+            if (pageId === 'map' && map) map.resize();
+            if (pageId === 'home' && homeMap) homeMap.resize();
+        }, 50);
+    }
+    
+    const countryFlags = {
+        USA: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600"><path fill="#fff" d="M0 0h900v600H0z"/><path fill="#b22234" d="M0 0h900v46.15H0zm0 92.3h900v46.15H0zm0 92.3h900v46.15H0zm0 92.3h900v46.15H0zm0 92.3h900v46.15H0zm0 92.3h900v46.15H0zm0 92.3h900v46.15H0z"/><path fill="#3c3b6e" d="M0 0h400v323.07H0z"/><path fill="#fff" d="m50 30 11.756 36.173-30.772-22.36h38.032l-30.772 22.36zm100 0 11.756 36.173-30.772-22.36h38.032l-30.772 22.36zm100 0 11.756 36.173-30.772-22.36h38.032l-30.772 22.36zm100 0 11.756 36.173-30.772-22.36h38.032l-30.772 22.36zM25 80 l11.756 36.173-30.772-22.36h38.032l-30.772 22.36zm100 0 11.756 36.173-30.772-22.36h38.032l-30.772 22.36zm100 0 11.756 36.173-30.772-22.36h38.032l-30.772 22.36zm100 0 11.756 36.173-30.772-22.36h38.032l-30.772 22.36zm-50 25 11.756 36.173-30.772-22.36h38.032l-30.772 22.36zm100 0 11.756 36.173-30.772-22.36h38.032l-30.772 22.36zm100 0 11.756 36.173-30.772-22.36h38.032l-30.772 22.36zM25 180 l11.756 36.173-30.772-22.36h38.032l-30.772 22.36zm100 0 11.756 36.173-30.772-22.36h38.032l-30.772 22.36zm100 0 11.756 36.173-30.772-22.36h38.032l-30.772 22.36zm100 0 11.756 36.173-30.772-22.36h38.032l-30.772 22.36zm-50 25 11.756 36.173-30.772-22.36h38.032l-30.772 22.36zm100 0 11.756 36.173-30.772-22.36h38.032l-30.772 22.36zm100 0 11.756 36.173-30.772-22.36h38.032l-30.772 22.36zM50 280 l11.756 36.173-30.772-22.36h38.032l-30.772 22.36zm100 0 11.756 36.173-30.772-22.36h38.032l-30.772 22.36zm100 0 11.756 36.173-30.772-22.36h38.032l-30.772 22.36zm100 0 11.756 36.173-30.772-22.36h38.032l-30.772 22.36z"/></svg>`,
+        UK: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 30"><clipPath id="a"><path d="M0 0v30h60V0z"/></clipPath><clipPath id="b"><path d="M30 15h30v15zv15H0zV0h30z"/></clipPath><g clip-path="url(#a)"><path d="M0 0v30h60V0z" fill="#00247d"/><path d="m0 0 60 30m0-30L0 30" stroke="#fff" stroke-width="6"/><path d="m0 0 60 30m0-30L0 30" clip-path="url(#b)" stroke="#cf142b" stroke-width="4"/><path d="M30 0v30M0 15h60" stroke="#fff" stroke-width="10"/><path d="M30 0v30M0 15h60" stroke="#cf142b" stroke-width="6"/></g></svg>`,
+        France: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600"><path fill="#fff" d="M0 0h900v600H0z"/><path fill="#002654" d="M0 0h300v600H0z"/><path fill="#ce1126" d="M600 0h300v600H600z"/></svg>`,
+        Japan: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600"><path fill="#fff" d="M0 0h900v600H0z"/><circle cx="450" cy="300" r="180" fill="#bc002d"/></svg>`,
+        Australia: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6"><path d="M0 0h12v6H0Z" fill="#00008b"/><path d="m0 0 6 3M0 3 6 0" stroke="#fff" stroke-width="1"/><path d="m-.1 3-.05-3L6-.05V.05L.05 3ZM6 .05l-6 3h.1l6-3Z" fill="#e4002b"/><path d="M3 0v3h3V0ZM0 3v3h3V3Z" fill="#fff"/><path d="M3 1.2h-.6v.6h.6v.6h.6v-.6h.6v-.6h-.6v-.6h-.6Z" fill="#e4002b"/><path d="M2.5 5 .45 4.9l-.2.4.1-.45-.45-.1.4-.2-.1-.45.4.2.2-.45.1.45.45.1-.4.2ZM8 4.6l-.7-.15-.3.6.15-.7-.7-.15.6-.3-.15-.7.6.3.3-.6.15.7.7.15-.6.3ZM8.5 2l-.5-.1-.2.4.1-.5-.5-.1.4-.2-.1-.5.4.2.2-.4.1.5.5.1-.4.2ZM6.5 1.5l-.7-.15-.3.6.15-.7-.7-.15.6-.3-.15-.7.6.3.3-.6.15.7.7.15-.6.3ZM10.5 4.1l-.35.05.35.65.15-.7-.7-.15.6-.3-.15-.7.6.3.3-.6.15.7Z" fill="#fff"/></svg>`,
+        DEFAULT: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><path fill="#212121" d="M8 8h112v112H8z"/><g fill="#fff"><path d="M78.5 35c-2.8 0-5 2.2-5 5s2.2 5 5 5 5-2.2 5-5-2.2-5-5-5zm-29 0c-2.8 0-5 2.2-5 5s2.2 5 5 5 5-2.2 5-5-2.2-5-5-5zM38 56h52v8H38z"/><path d="M57.5 70l-3.5 28h8l2-20 2 20h8l-3.5-28z"/></g></svg>`
+    };
+
+    function initializeHomeMap() {
+        if (homeMap || !fullFleetData.ships.length) return;
+        homeMap = new mapboxgl.Map({
+            container: 'home-map-preview',
+            style: 'mapbox://styles/mapbox/satellite-streets-v12',
+            center: [0, 20], zoom: 0.5, interactive: false
+        });
+        homeMap.on('load', () => renderMarkers(fullFleetData.ships, homeMap, true));
+    }
+    
+    function initializeFullMap() {
+        if (map || !fullFleetData.ships.length) return;
+        map = new mapboxgl.Map({
+            container: 'map', style: 'mapbox://styles/mapbox/satellite-streets-v12',
+            center: [15, 25], zoom: 1.5, projection: 'globe'
+        });
+        map.on('load', () => {
+             renderMarkers(fullFleetData.ships, map);
+             applyMapFilters();
+        });
+        map.on('style.load', () => {
+             setTimeout(() => {
+                renderMarkers(fullFleetData.ships, map);
+                applyMapFilters();
+            }, 200);
+        });
+    }
+    
+    function toCardinal(coord, type) {
+        if (typeof coord !== 'number') return 'N/A';
+        const degrees = Math.abs(coord);
+        let direction;
+        if (type === 'lat') {
+            direction = coord >= 0 ? 'N' : 'S';
+        } else if (type === 'lon') {
+            direction = coord >= 0 ? 'E' : 'W';
+        }
+        return `${degrees.toFixed(0)}° ${direction}`;
+    }
+
+    function timeSince(date) {
+        if (!date) return "N/A";
+        const seconds = Math.floor((new Date() - date) / 1000);
+        if (isNaN(seconds)) return "a moment ago";
+        let interval = seconds / 31536000;
+        if (interval > 1) return Math.floor(interval) + " years ago";
+        interval = seconds / 2592000;
+        if (interval > 1) return Math.floor(interval) + " months ago";
+        interval = seconds / 86400;
+        if (interval > 1) return Math.floor(interval) + " days ago";
+        interval = seconds / 3600;
+        if (interval > 1) return Math.floor(interval) + " hours ago";
+        interval = seconds / 60;
+        if (interval > 1) return Math.floor(interval) + " minutes ago";
+        return "a few seconds ago";
+    }
+
+    function renderMarkers(shipsToRender, targetMap, isPreview = false) {
+        if (!targetMap) return;
+        if (targetMap.markers) {
+            targetMap.markers.forEach(marker => marker.remove());
+        }
+        targetMap.markers = []; 
+        shipsToRender
+            .filter(ship => Array.isArray(ship.coordinates) && ship.coordinates.length === 2)
+            .forEach(ship => {
+                const el = document.createElement('div');
+                el.className = 'ship-marker';
+                
+                const iconEl = document.createElement('div');
+                iconEl.className = 'ship-icon';
+
+                el.appendChild(iconEl);
+
+                const marker = new mapboxgl.Marker(el)
+                    .setLngLat(ship.coordinates)
+                    .addTo(targetMap);
+
+                if (!isPreview) {
+                    const popupContent = `<div class="space-y-2">
+                        <h3 class="font-bold text-base font-mono">${ship.name}</h3>
+                        <div class="text-xs text-gray-300 space-y-1">
+                            <p><strong>Group:</strong> ${ship.group || 'N/A'}</p>
+                            <p><strong>Status:</strong> ${ship.status || 'N/A'}</p>
+                            <p><strong>Reported:</strong> ${ship.locationReported || 'N/A'}</p>
+                            <p><strong>Coords:</strong> ${ship.coordinates ? `${toCardinal(ship.coordinates[1], 'lat')}, ${toCardinal(ship.coordinates[0], 'lon')}` : 'N/A'}</p>
+                        </div>
+                        <button class="popup-details-button mt-2 w-full bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold py-1 px-2 rounded transition-colors" data-hull="${ship.hull}">View Details</button>
+                    </div>`;
+                    const popup = new mapboxgl.Popup({ offset: 25, closeButton: false }).setHTML(popupContent);
+                    marker.setPopup(popup);
+                }
+                
+                targetMap.markers.push(marker);
+            });
+    }
+    
+    function populateFilters() {
+        const filterContainer = document.getElementById('filter-controls');
+        if (!filterContainer || !fullFleetData.ships.length) return;
+        const classes = [...new Set(fullFleetData.ships.map(s => s.class || "Unknown"))].sort();
+        filterContainer.innerHTML = classes.map(c => `<label for="filter-${c.replace(/\s+/g, '-')}" class="flex items-center"><input type="checkbox" id="filter-${c.replace(/\s+/g, '-')}" data-class="${c}" class="filter-checkbox h-4 w-4 bg-gray-700 border-gray-600 rounded text-sky-500 focus:ring-sky-500"><span class="ml-2 text-gray-300">${c}</span></label>`).join('');
+        document.querySelectorAll('.filter-checkbox').forEach(box => box.addEventListener('change', applyMapFilters));
+    }
+
+    function applyMapFilters() {
+        const searchTerm = document.getElementById('search-bar').value.toLowerCase();
+        const checkedBoxes = document.querySelectorAll('.filter-checkbox:checked');
+        const selectedClasses = Array.from(checkedBoxes).map(box => box.dataset.class);
+        
+        const filteredShips = fullFleetData.ships.filter(ship => {
+            const classMatch = selectedClasses.length === 0 || selectedClasses.includes(ship.class || "Unknown");
+            const nameMatch = ship.name.toLowerCase().includes(searchTerm) || (ship.hull || '').toLowerCase().includes(searchTerm);
+            
+            const regionMatch = !activeIntelFilters.region || ship.region === activeIntelFilters.region;
+            const groupMatch = !activeIntelFilters.group || ship.group === activeIntelFilters.group;
+
+            return classMatch && nameMatch && regionMatch && groupMatch;
+        });
+        renderMarkers(filteredShips, map);
+    }
+    
+    function generateServiceHistory(ship) {
+        if (ship.history && ship.history.length > 50) {
+             return ship.history;
+        }
+
+        const navy = ship.country === 'USA' ? 'U.S. Navy' : `Royal ${ship.country}n Navy`;
+        
+        let history = `Commissioned in ${ship.commissionedYear || 'an undisclosed year'}, ${ship.name} (${ship.hull}) is a capable ${ship.class} assigned to the ${navy}. `;
+        history += `The vessel is currently based at ${ship.homeport || 'an undisclosed homeport'}. `;
+        history += `Throughout its service, ${ship.name} has been integral to maritime operations, participating in numerous joint-force naval exercises with allied nations, focusing on capabilities relevant to its class. `;
+
+        if (ship.region && ship.region !== "Unknown" && ship.region !== "In Port") {
+            let groupInfo = ship.group ? ` as part of the ${ship.group}` : '';
+            history += `The vessel is currently on an active deployment in the ${ship.region}${groupInfo}, contributing to regional stability and maritime security.`;
+        } else if (ship.status) {
+            history += `Current status is reported as: "${ship.status}".`;
+        }
+
+        return history;
+    }
+
+    function showDetailsModal(ship) {
+        const currentYear = new Date().getFullYear();
+        const shipAge = ship.commissionedYear ? currentYear - ship.commissionedYear : 'N/A';
+        modalShipName.textContent = ship.name;
+        modalShipHullClass.textContent = `${ship.hull || 'N/A'} | ${ship.class || 'N/A'}`;
+        modalShipImage.src = ship.image || 'https://placehold.co/800x600/1F2937/FFFFFF?text=Image+Not+Found';
+        modalShipImage.alt = ship.name;
+        modalShipDescription.textContent = ship.description || "No description available.";
+        modalFlagContainer.innerHTML = countryFlags[ship.country] || '';
+        const stats = {
+            "Homeport": ship.homeport, "In Service": ship.commissionedYear ? `${ship.commissionedYear} (${shipAge} years)` : 'N/A',
+            "Length": ship.length_ft ? `${ship.length_ft} ft` : 'N/A', "Beam": ship.beam_ft ? `${ship.beam_ft} ft` : 'N/A',
+            "Draft": ship.draft_ft ? `${ship.draft_ft} ft` : 'N/A', "Speed": ship.speed_kn ? `${ship.speed_kn} knots` : 'N/A',
+            "Complement": ship.complement ? ship.complement.toLocaleString() : 'N/A', "Displacement": ship.tonnage ? `${ship.tonnage.toLocaleString()} tons` : 'N/A',
+        };
+        modalStatsGrid.innerHTML = Object.entries(stats).map(([key, value]) => `<div class="col-span-1"><p class="font-bold text-gray-400">${key}</p><p class="font-mono text-white">${value || 'N/A'}</p></div>`).join('');
+        modalArmamentList.innerHTML = (ship.armament || []).map(item => `<li>${item}</li>`).join('');
+        modalShipHistory.textContent = generateServiceHistory(ship);
+        modal.classList.add('visible');
+    }
+    
+    function hideDetailsModal() {
+        modal.classList.remove('visible');
+    }
+
+    function sortAndPopulateDatabase() {
+        const searchTerm = databaseSearchBar.value.toLowerCase();
+        const selectedClass = databaseClassFilter.value;
+        const sortValue = databaseSortFilter.value;
+
+        let filteredShips = fullFleetData.ships.filter(ship => {
+            const classMatch = !selectedClass || (ship.class || "Unknown") === selectedClass;
+            const nameMatch = ship.name.toLowerCase().includes(searchTerm) || (ship.hull || '').toLowerCase().includes(searchTerm);
+            return classMatch && nameMatch;
+        });
+
+        switch(sortValue) {
+            case 'name_asc':
+                filteredShips.sort((a, b) => a.name.localeCompare(b.name));
+                break;
+            case 'name_desc':
+                filteredShips.sort((a, b) => b.name.localeCompare(a.name));
+                break;
+            case 'date_desc':
+                filteredShips.sort((a, b) => (b.commissionedYear || 0) - (a.commissionedYear || 0));
+                break;
+            case 'date_asc':
+                filteredShips.sort((a, b) => (a.commissionedYear || 0) - (b.commissionedYear || 0));
+                break;
+        }
+
+        populateDatabase(filteredShips);
+    }
+
+    function populateDatabase(shipsToRender = fullFleetData.ships) {
+        const grid = document.getElementById('database-grid');
+        if (!grid) return;
+        grid.innerHTML = shipsToRender.map(ship => `<div class="db-card bg-gray-800 rounded-lg border border-gray-700 overflow-hidden flex flex-col"><img src="${ship.image || 'https://placehold.co/600x400/1F2937/FFFFFF?text=Ship+Image'}" onerror="this.onerror=null;this.src='https://placehold.co/600x400/1F2937/FFFFFF?text=Ship+Image';" alt="${ship.name}" class="h-48 w-full object-cover"><div class="p-4 flex-grow flex flex-col"><h3 class="font-bold font-mono text-lg truncate">${ship.name}</h3><p class="text-sm text-gray-400">${ship.hull || 'N/A'}</p><p class="mt-2 text-sm text-gray-300 bg-gray-700 inline-block px-2 py-1 rounded self-start">${ship.class || 'Unknown'}</p><div class="mt-auto pt-4 border-t border-gray-600 grid grid-cols-3 gap-2 text-sm">
+                <button class="details-button bg-sky-600 hover:bg-sky-500 text-white font-bold py-2 px-3 rounded transition-colors" data-hull="${ship.hull}">Details</button>
+                <button class="locate-button bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-3 rounded transition-colors" data-hull="${ship.hull}">Locate</button>
+                <button class="status-button bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-3 rounded transition-colors" data-hull="${ship.hull}">Status</button>
+            </div></div></div>`).join('');
+    }
+    
+    function populateDatabaseFilters() {
+        if (!databaseClassFilter || !fullFleetData.ships.length) return;
+        const classes = [...new Set(fullFleetData.ships.map(s => s.class || "Unknown"))].sort();
+        databaseClassFilter.innerHTML = '<option value="">All Classes</option>';
+        classes.forEach(c => {
+            const option = document.createElement('option');
+            option.value = c;
+            option.textContent = c;
+            databaseClassFilter.appendChild(option);
+        });
+    }
+
+    function setupEventListeners() {
+        document.getElementById('database-grid').addEventListener('click', (e) => {
+            const button = e.target.closest('button');
+            if (!button) return;
+
+            const hull = button.dataset.hull;
+            const ship = fullFleetData.ships.find(s => s.hull === hull);
+            if (!ship) return;
+            
+            if (button.classList.contains('details-button')) {
+                showDetailsModal(ship);
+            } else if (button.classList.contains('locate-button')) {
+                activeIntelFilters = { region: null, group: null };
+                showPage('map');
+                const flyToShip = () => map.flyTo({ center: ship.coordinates, zoom: 8, essential: true });
+                if (!map) { initializeFullMap(); map.once('load', flyToShip); } else { flyToShip(); }
+            } else if (button.classList.contains('status-button')) {
+                 showPage('map');
+                const showStatusPopup = () => {
+                    map.flyTo({ center: ship.coordinates, zoom: 8, essential: true });
+                    new mapboxgl.Popup({ closeOnClick: true, maxWidth: '240px' })
+                        .setLngLat(ship.coordinates)
+                        .setHTML(`<div class="p-2 bg-gray-800 text-white rounded-lg border border-gray-700">
+                            <h4 class="font-bold text-sky-400">${ship.name}</h4>
+                            <p class="text-sm">${ship.status}</p>
+                        </div>`)
+                        .addTo(map);
+                };
+                if (!map) { initializeFullMap(); map.once('load', showStatusPopup); } else { showStatusPopup(); }
+            }
+        });
+
+        navLinks.forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                activeIntelFilters = { region: null, group: null };
+                const pageId = link.dataset.page;
+                showPage(pageId);
+                if (pageId === 'map' && !map) initializeFullMap();
+            });
+        });
+
+        mobileMenuButton.addEventListener('click', () => mobileMenu.classList.toggle('hidden'));
+        document.getElementById('search-bar').addEventListener('keyup', applyMapFilters);
+        document.getElementById('reset-filters').addEventListener('click', () => {
+            document.getElementById('search-bar').value = '';
+            document.querySelectorAll('.filter-checkbox').forEach(box => box.checked = false);
+            activeIntelFilters = { region: null, group: null };
+            applyMapFilters();
+            if (map) map.flyTo({center: [15, 25], zoom: 1.5});
+        });
+
+        modalCloseButton.addEventListener('click', hideDetailsModal);
+        modal.addEventListener('click', (e) => { if (e.target === modal) hideDetailsModal(); });
+        databaseSearchBar.addEventListener('input', sortAndPopulateDatabase);
+        databaseClassFilter.addEventListener('change', sortAndPopulateDatabase);
+        databaseSortFilter.addEventListener('change', sortAndPopulateDatabase);
+
+        document.body.addEventListener('click', function (e) {
+            const popupDetailsButton = e.target.closest('.popup-details-button');
+            if (popupDetailsButton) {
+                const hull = popupDetailsButton.dataset.hull;
+                const ship = fullFleetData.ships.find(s => s.hull === hull);
+                if (ship) {
+                    document.querySelectorAll('.mapboxgl-popup').forEach(p => p.remove());
+                    showDetailsModal(ship);
+                }
+            }
+            
+            const intelGroupHeader = e.target.closest('.intel-group-header');
+            if(intelGroupHeader) {
+                const groupName = intelGroupHeader.dataset.group;
+                const intelFilterLink = intelGroupHeader.querySelector('.intel-filter-link');
+                
+                if (intelFilterLink && intelFilterLink.contains(e.target)) {
+                    activeIntelFilters = { region: null, group: groupName };
+                    showPage('map');
+
+                    const groupShips = fullFleetData.ships.filter(s => s.group === groupName && s.coordinates);
+                    if (groupShips.length > 0) {
+                        const lats = groupShips.map(s => s.coordinates[1]);
+                        const lons = groupShips.map(s => s.coordinates[0]);
+                        const centerLat = lats.reduce((a, b) => a + b, 0) / lats.length;
+                        const centerLon = lons.reduce((a, b) => a + b, 0) / lons.length;
+                        
+                        const flyToGroup = () => map.flyTo({ center: [centerLon, centerLat], zoom: 5, essential: true });
+                        if (!map) { initializeFullMap(); map.once('load', flyToGroup); } else { flyToGroup(); }
+                    } else {
+                         if (!map) { initializeFullMap(); } else { applyMapFilters(); }
+                    }
+                } else {
+                     intelGroupHeader.classList.toggle('open');
+                }
+            }
+            
+            const recentActivityCard = e.target.closest('.recent-activity-card');
+            if(recentActivityCard) {
+                const hull = recentActivityCard.dataset.hull;
+                const ship = fullFleetData.ships.find(s => s.hull === hull);
+                if(ship) showDetailsModal(ship);
+            }
+        });
+        
+        document.querySelectorAll('.map-view-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                if(map) map.setProjection(e.target.dataset.projection);
+            });
+        });
+
+        document.querySelectorAll('.map-style-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                if(map) map.setStyle('mapbox://styles/mapbox/' + e.target.dataset.style);
+            });
+        });
+    }
+    
+    function animateCounters() {
+        const counters = document.querySelectorAll('.animated-counter');
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const counter = entry.target;
+                    const target = +counter.dataset.target;
+                    counter.innerText = '0';
+                    const updateCounter = () => {
+                        const current = +counter.innerText;
+                        const increment = Math.max(1, Math.ceil(target / 100));
+
+                        if (current < target) {
+                            counter.innerText = `${Math.min(target, current + increment)}`;
+                            requestAnimationFrame(updateCounter);
+                        } else {
+                            counter.innerText = target;
+                        }
+                    };
+                    updateCounter();
+                    observer.unobserve(counter);
+                }
+            });
+        }, { threshold: 0.5 });
+        counters.forEach(counter => observer.observe(counter));
+    }
+
+    function populateHomePageExtras() {
+        const activityGrid = document.getElementById('recent-activity-grid');
+        if (!activityGrid || !fullFleetData.ships.length) return;
+        const sortedShips = [...fullFleetData.ships].sort((a, b) => new Date(b.locationReported) - new Date(a.locationReported));
+        const recentShips = sortedShips.slice(0, 4);
+        activityGrid.innerHTML = recentShips.map(ship => `
+            <div class="recent-activity-card bg-gray-800/80 backdrop-blur-sm p-4 rounded-lg border border-gray-700" data-hull="${ship.hull}">
+                <h4 class="font-bold text-sky-400 truncate">${ship.name}</h4>
+                <p class="text-sm text-gray-400">${ship.class}</p>
+                <p class="text-sm text-gray-300 mt-2">${ship.status}</p>
+                <p class="text-xs text-gray-500 mt-1">Reported: ${new Date(ship.locationReported).toDateString()}</p>
+            </div>
+        `).join('');
+    }
+
+    function populateIntelBrief() {
+        if (!fullFleetData.ships.length) return;
+        const ships = fullFleetData.ships;
+        const totalAssets = ships.length;
+        const carrierGroups = new Set(ships.filter(s => s.group && s.group.includes('CSG')).map(s => s.group));
+        const totalCarrierGroups = carrierGroups.size;
+        const deployedRegions = [...new Set(ships.map(s => s.region).filter(r => r && r !== 'Unknown' && r !== 'In Port'))];
+        document.getElementById('intel-summary').innerHTML = `<div class="bg-gray-800 p-4 rounded-lg border border-gray-700 text-center"><span class="text-4xl font-mono font-bold text-sky-400">${totalAssets}</span><span class="block text-sm text-gray-400 mt-1">Total Tracked Assets</span></div><div class="bg-gray-800 p-4 rounded-lg border border-gray-700 text-center"><span class="text-4xl font-mono font-bold text-sky-400">${totalCarrierGroups}</span><span class="block text-sm text-gray-400 mt-1">Deployed Carrier Groups</span></div><div class="bg-gray-800 p-4 rounded-lg border border-gray-700 text-center"><span class="text-4xl font-mono font-bold text-sky-400">${deployedRegions.length}</span><span class="block text-sm text-gray-400 mt-1">Distinct Operational Regions</span></div>`;
+        
+        const classCounts = ships.reduce((acc, ship) => {
+            const className = ship.class || "Unknown";
+            acc[className] = (acc[className] || 0) + 1;
+            return acc;
+        }, {});
+
+        const intelClassBreakdown = document.getElementById('intel-class-breakdown');
+        intelClassBreakdown.innerHTML = Object.entries(classCounts).sort(([,a],[,b]) => b-a).map(([className, count]) => {
+            return `<div><div class="flex justify-between items-center text-gray-300 mb-1"><span>${className}</span><span class="font-mono font-bold">${count}</span></div><div class="w-full bg-gray-700 rounded-full h-2"><div class="intel-bar bg-sky-500 h-2 rounded-full" data-width="${(count / totalAssets) * 100}%"></div></div></div>`
+        }).join('');
+
+        const regionCounts = ships.reduce((acc, ship) => {
+            if (ship.region && ship.region !== 'Unknown' && ship.region !== 'In Port') {
+                acc[ship.region] = (acc[ship.region] || 0) + 1;
+            }
+            return acc;
+        }, {});
+        document.getElementById('intel-region-breakdown').innerHTML = Object.entries(regionCounts).sort(([,a],[,b]) => b-a).map(([regionName, count]) => `<div class="flex justify-between items-center text-gray-300 p-2 rounded-md"><span>${regionName}</span><span class="font-mono font-bold text-lg">${count}</span></div>`).join('');
+        
+        const groups = ships.reduce((acc, ship) => {
+            const groupName = ship.group || 'Independent Deployer';
+            if (!acc[groupName]) acc[groupName] = [];
+            acc[groupName].push(ship);
+            return acc;
+        }, {});
+        
+        document.getElementById('intel-deployed-groups').innerHTML = Object.entries(groups).sort(([groupA], [groupB]) => groupA.localeCompare(groupB)).map(([groupName, groupShips], index) => `
+            <div class="bg-gray-800 rounded-lg border border-gray-700">
+                <div class="intel-group-header" data-group="${groupName}">
+                    <h3 class="intel-filter-link text-xl font-bold font-mono text-sky-400">${groupName}</h3>
+                    <span class="arrow text-sky-400 text-2xl transform">▼</span>
+                </div>
+                <div class="intel-group-content">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        ${groupShips.sort((a,b) => a.name.localeCompare(b.name)).map(ship => `
+                            <div class="text-sm"><p class="font-bold text-white">${ship.name}</p><p class="text-gray-400">${ship.hull} | ${ship.class || ''}</p></div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>`).join('');
+    }
+
+    function animateIntelBars() {
+        const intelContainer = document.getElementById('intel-class-container');
+        if(!intelContainer) return;
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const bars = entry.target.querySelectorAll('.intel-bar');
+                    bars.forEach(bar => {
+                        bar.style.width = bar.dataset.width;
+                    });
+                    observer.unobserve(entry.target);
+                }
+            });
+        }, { threshold: 0.5 });
+
+        observer.observe(intelContainer);
+    }
+
+    function updateHomepageStats() {
+        if (!fullFleetData || !fullFleetData.ships) return;
+        const carrierGroupsEl = document.getElementById('carrier-group-count');
+        const shipCountEl = document.getElementById('ship-count');
+        const carrierGroups = new Set(fullFleetData.ships.filter(s => s.group && s.group.includes('CSG')).map(s => s.group));
+        
+        carrierGroupsEl.dataset.target = carrierGroups.size;
+        shipCountEl.dataset.target = fullFleetData.ships.length;
+        
+        const lastUpdatedEl = document.getElementById('last-updated');
+        if (lastDataFetchTime) {
+            lastUpdatedEl.textContent = timeSince(lastDataFetchTime);
+        } else {
+            lastUpdatedEl.textContent = 'loading...';
+        }
+    }
+    
+    // --- INITIALIZATION ---
+    document.addEventListener('DOMContentLoaded', () => {
+        const initializeAppWithData = (data) => {
+            fullFleetData = data;
+            lastDataFetchTime = new Date();
+            const featuredShip = fullFleetData.ships.find(s => s.hull === 'CVN-78');
+            if (featuredShip && featuredShipImage) {
+                featuredShipImage.src = featuredShip.image || 'https://placehold.co/600x400/1F2937/FFFFFF?text=Ship+Image';
+            }
+            populateFilters();
+            populateDatabaseFilters();
+            sortAndPopulateDatabase();
+            populateIntelBrief();
+            updateHomepageStats();
+            populateHomePageExtras();
+            initializeHomeMap();
+            animateIntelBars();
+            animateCounters();
+            // The radar function has been removed
+        };
+        
+        setupEventListeners();
+
+        fetch('http://127.0.0.1:5000/api/fleet')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`(Network: ${response.status})`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log("Fleet data loaded successfully from API.", data);
+                initializeAppWithData(data);
+                showPage('home');
+            })
+            .catch(error => {
+                console.error("FATAL: Could not fetch or process fleet data from API.", error);
+                document.body.innerHTML = `<div class="h-screen w-full flex items-center justify-center bg-gray-900 text-red-500 text-xl p-8 text-center">
+                    <p class="font-bold text-2xl mb-4">FATAL ERROR: Could not load fleet data.</p>
+                    <p class="text-base mb-4">Please ensure the Python back-end server is running correctly.</p>
+                    <p class="text-sm text-gray-400 font-mono bg-gray-800 p-2 rounded">Error details: ${error.message}</p>
+                </div>`;
+            });
+    });
+    </script>
+</body>
+</html>
