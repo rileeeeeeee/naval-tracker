@@ -978,7 +978,7 @@
         
         setupEventListeners();
 
-        fetch('http://127.0.0.1:5000/api/fleet')
+        fetch('https://global-presence.onrender.com/api/fleet')
             .then(response => {
                 if (!response.ok) {
                     throw new Error(`(Network: ${response.status})`);
